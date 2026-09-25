@@ -1,81 +1,97 @@
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Radio Reparto</title>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Walkie Talkie</title>
 <style>
-body{margin:0;background:#111;color:#fff;font-family:sans-serif;display:flex;flex-direction:column;height:100vh}
-#top{padding:12px;background:#1e1e1e;display:flex;gap:8px}input{flex:1;padding:10px;border-radius:8px;border:0}button{padding:10px 14px;border-radius:8px;border:0;font-weight:700}
-#chat{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
-.msg{background:#222;padding:10px;border-radius:12px;max-width:85%}.me{background:#0b5cff;align-self:flex-end}
-#ptt{padding:16px;background:#1e1e1e;text-align:center}
-#btnHablar{width:90%;padding:22px;border-radius:50px;background:#22c55e;font-size:20px;font-weight:900;border:0;touch-action:none;user-select:none}
-#btnHablar.hablando{background:#ef4444;transform:scale(0.97)}
-audio{width:100%}
-</style></head>
+*{box-sizing:border-box}
+body{margin:0;background:#0f0f0f;color:#fff;font-family:system-ui;height:100vh;display:flex;flex-direction:column}
+.top{padding:12px;background:#1c1c1c;display:flex;gap:8px;align-items:center}
+.top b{font-size:14px}
+.top input{flex:1;padding:12px;border-radius:10px;border:0;background:#2a2a2a;color:#fff}
+.btn{padding:12px 16px;border-radius:10px;border:0;font-weight:800;background:#22c55e;color:#000}
+#chat{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#111}
+.msg{background:#222;padding:10px 12px;border-radius:12px;max-width:85%;font-size:14px}
+.msg.me{background:#2563eb;align-self:flex-end}
+.footer{padding:14px;background:#1c1c1c}
+#btnHablar{width:100%;padding:24px;border-radius:30px;background:#22c55e;border:0;font-size:20px;font-weight:900;touch-action:none}
+#btnHablar.hablando{background:#ef4444;color:#fff;transform:scale(.97)}
+.small{display:flex;gap:8px;margin-top:10px}
+.small button{flex:1;background:#2a2a2a;color:#fff;border:0;padding:10px;border-radius:10px}
+#estado{text-align:center;margin-bottom:10px;font-size:13px;opacity:.7}
+</style>
+</head>
 <body>
-<div id="top">
-<input id="sala" placeholder="Nombre sala ej: reparto1" value="reparto1">
-<input id="nombre" placeholder="Tu nombre ej: Jefe" style="max-width:110px">
-<button id="entrar" style="background:#22c55e">ENTRAR</button>
+<div class="top">
+<b>Walkie Talkie</b>
+<input id="sala" value="reparto1" placeholder="Sala">
+<input id="nombre" placeholder="Nombre" style="max-width:110px">
+<button class="btn" id="entrar">ENTRAR</button>
 </div>
 <div id="chat"></div>
-<div id="ptt">
-<div id="estado" style="margin-bottom:8px;opacity:.7">Mantén presionado para hablar</div>
-<button id="btnHablar">🎤 MANTÉN PARA HABLAR</button>
-<div style="margin-top:10px;display:flex;gap:8px;justify-content:center">
-<button id="btnNota" style="background:#333;color:#fff">🎙️ Enviar nota de voz</button>
-<button id="btnSilenciar" style="background:#333;color:#fff">🔇 Silenciar</button>
+<div class="footer">
+<div id="estado">Presiona ENTRAR y permite el micro</div>
+<button id="btnHablar">🎤 MANTEN PARA HABLAR</button>
+<div class="small">
+<button id="btnNota">🎙️ Nota de voz</button>
+<button id="btnMute">🔊 Sonido</button>
 </div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 <script>
 const firebaseConfig={apiKey:"AIzaSyDvetl-4f68ykb5GpGSZtCAvOeetKmnh-4",authDomain:"menu-digital-12e66.firebaseapp.com",databaseURL:"https://menu-digital-12e66-default-rtdb.firebaseio.com",projectId:"menu-digital-12e66",appId:"1:388372771516:web:516a80aeeecc1ab8f756b9"};
-firebase.initializeApp(firebaseConfig); const db=firebase.database();
-let localStream, pcs={}, salaActual="", miNombre="Yo", muted=false;
-const chat=document.getElementById('chat'); const btnHablar=document.getElementById('btnHablar');
-
-function addMsg(html,me=false){const d=document.createElement('div');d.className='msg'+(me?' me':'');d.innerHTML=html;chat.appendChild(d);chat.scrollTop=chat.scrollHeight;}
-
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+let localStream, pcs={}, sala, nombre, yoId, muted=false, rec, chunks=[];
+const chat=document.getElementById('chat');
+function log(t,me=false){const d=document.createElement('div');d.className='msg'+(me?' me':'');d.innerHTML=t;chat.appendChild(d);chat.scrollTop=chat.scrollHeight;}
 async function entrar(){
- salaActual=document.getElementById('sala').value.trim().toLowerCase()||'reparto1';
- miNombre=document.getElementById('nombre').value.trim()||'Anonimo';
- localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
- addMsg('✅ Entraste a '+salaActual+' como '+miNombre,true);
- const salaRef=db.ref('radio/'+salaActual+'/users');
- const yoRef=salaRef.push({nombre:miNombre,ts:Date.now()}); yoRef.onDisconnect().remove();
- salaRef.on('child_added',async snap=>{if(snap.key==yoRef.key) return; crearPC(snap.key,snap.val(),true);});
- salaRef.on('child_removed',snap=>{if(pcs[snap.key]){pcs[snap.key].close();delete pcs[snap.key];}});
- db.ref('radio/'+salaActual+'/signals/'+yoRef.key).on('child_added',async snap=>{
-   const s=snap.val(); const id=s.from;
-   if(!pcs[id]) crearPC(id,{nombre:s.nombre},false);
-   if(s.offer){await pcs[id].setRemoteDescription(s.offer); const ans=await pcs[id].createAnswer(); await pcs[id].setLocalDescription(ans); db.ref('radio/'+salaActual+'/signals/'+id+'/'+yoRef.key).push({from:yoRef.key,answer:ans,nombre:miNombre});}
-   if(s.answer){await pcs[id].setRemoteDescription(s.answer);}
-   if(s.candidate){try{await pcs[id].addIceCandidate(s.candidate);}catch(e){}}
+ sala=document.getElementById('sala').value.trim().toLowerCase()||'reparto1';
+ nombre=document.getElementById('nombre').value.trim()||'Usuario'+Math.floor(Math.random()*100);
+ try{localStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
+ catch(e){alert('Debes permitir microfono: '+e);return;}
+ localStream.getAudioTracks().forEach(t=>t.enabled=false);
+ const ref=db.ref('radio/'+sala+'/users');
+ const yo=ref.push({nombre:nombre,ts:Date.now()});
+ yoId=yo.key; yo.onDisconnect().remove();
+ log('✅ Entraste a <b>'+sala+'</b> como <b>'+nombre+'</b>',true);
+ document.getElementById('estado').innerText='Conectado a '+sala+'. Mantén presionado para hablar';
+ ref.on('child_added',async snap=>{if(snap.key===yoId) return; await crearPC(snap.key,snap.val(),true);});
+ ref.on('child_removed',snap=>{if(pcs[snap.key]){pcs[snap.key].close();delete pcs[snap.key];}});
+ db.ref('radio/'+sala+'/signals/'+yoId).on('child_added',async snap=>{
+  const s=snap.val(); const id=s.from;
+  if(!pcs[id]) await crearPC(id,{nombre:s.nombre},false);
+  if(s.offer){await pcs[id].setRemoteDescription(s.offer); const ans=await pcs[id].createAnswer(); await pcs[id].setLocalDescription(ans); db.ref('radio/'+sala+'/signals/'+id+'/'+yoId).push({from:yoId,answer:ans,nombre:nombre});}
+  if(s.answer){await pcs[id].setRemoteDescription(s.answer);}
+  if(s.candidate){try{await pcs[id].addIceCandidate(s.candidate);}catch(e){}}
  });
- db.ref('radio/'+salaActual+'/notas').on('child_added',snap=>{const n=snap.val(); if(n.from==miNombre) return; addMsg(`<b>${n.from} 🎧 nota:</b><br><audio controls src="${n.audio}"></audio>`);});
- document.getElementById('estado').innerText='Conectado. Mantén para hablar a todos.';
- yoRef.key && (yoRef.key=yoRef.key); window._yo=yoRef.key; window._sala=salaActual;
+ db.ref('radio/'+sala+'/notas').on('child_added',snap=>{const n=snap.val(); if(n.from===nombre) return; log(`<b>${n.from} 🎧:</b><br><audio controls src="${n.audio}"></audio>`);});
 }
-function crearPC(id,info,esCaller){
- const pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]});
- pcs[id]=pc; localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
- pc.ontrack=e=>{let a=document.getElementById('a_'+id); if(!a){a=document.createElement('audio');a.id='a_'+id;a.autoplay=true;a.playsInline=true;document.body.appendChild(a); addMsg(`🔊 ${info.nombre} conectado`);} a.srcObject=e.streams[0]; a.muted=muted;};
- pc.onicecandidate=e=>{if(e.candidate) db.ref('radio/'+salaActual+'/signals/'+id+'/'+window._yo).push({from:window._yo,candidate:e.candidate,nombre:miNombre});};
- if(esCaller){pc.createOffer().then(o=>pc.setLocalDescription(o).then(()=>{db.ref('radio/'+salaActual+'/signals/'+id+'/'+window._yo).push({from:window._yo,offer:o,nombre:miNombre});}));}
+async function crearPC(id,info,caller){
+ const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+ pcs[id]=pc;
+ localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+ pc.ontrack=e=>{let a=document.getElementById('a_'+id); if(!a){a=document.createElement('audio');a.id='a_'+id;a.autoplay=true;a.playsInline=true;document.body.appendChild(a); log(`🔊 ${info.nombre} conectado`);} a.srcObject=e.streams[0]; a.muted=muted;};
+ pc.onicecandidate=e=>{if(e.candidate) db.ref('radio/'+sala+'/signals/'+id+'/'+yoId).push({from:yoId,candidate:e.candidate,nombre:nombre});};
+ if(caller){const off=await pc.createOffer(); await pc.setLocalDescription(off); db.ref('radio/'+sala+'/signals/'+id+'/'+yoId).push({from:yoId,offer:off,nombre:nombre});}
 }
-let hablando=false;
-function setTalk(v){localStream.getAudioTracks().forEach(t=>t.enabled=v); hablando=v; btnHablar.classList.toggle('hablando',v); btnHablar.innerText=v?'🔴 HABLANDO...':'🎤 MANTÉN PARA HABLAR';}
-btnHablar.addEventListener('pointerdown',e=>{e.preventDefault(); setTalk(true);});
-btnHablar.addEventListener('pointerup',e=>{e.preventDefault(); setTalk(false);});
-btnHablar.addEventListener('pointerleave',()=>setTalk(false));
-// iniciar silenciado tipo walkie
-document.getElementById('entrar').onclick=async()=>{await entrar(); setTalk(false);};
-// notas de voz
-let rec, chunks=[];
+const btn=document.getElementById('btnHablar');
+function talk(v){if(!localStream) return; localStream.getAudioTracks().forEach(t=>t.enabled=v); btn.classList.toggle('hablando',v); btn.innerText=v?'🔴 HABLANDO...':'🎤 MANTEN PARA HABLAR';}
+btn.addEventListener('pointerdown',e=>{e.preventDefault();talk(true);});
+btn.addEventListener('pointerup',e=>{e.preventDefault();talk(false);});
+btn.addEventListener('pointercancel',()=>talk(false));
+btn.addEventListener('pointerleave',()=>talk(false));
+document.getElementById('entrar').onclick=entrar;
 document.getElementById('btnNota').onclick=async()=>{
- if(rec && rec.state=='recording'){rec.stop(); return;}
- const s=await navigator.mediaDevices.getUserMedia({audio:true}); rec=new MediaRecorder(s); chunks=[]; rec.ondataavailable=e=>chunks.push(e.data);
- rec.onstop=async()=>{const blob=new Blob(chunks,{type:'audio/webm'}); const reader=new FileReader(); reader.onload=()=>{db.ref('radio/'+salaActual+'/notas').push({from:miNombre,audio:reader.result,ts:Date.now()}); addMsg(`<b>Tú 🎤 nota:</b><br><audio controls src="${reader.result}"></audio>`,true);}; reader.readAsDataURL(blob);};
- rec.start(); addMsg('Grabando nota... presiona de nuevo para enviar',true); setTimeout(()=>{if(rec.state=='recording')rec.stop();},10000);
+ if(rec && rec.state==='recording'){rec.stop();return;}
+ const s=await navigator.mediaDevices.getUserMedia({audio:true});
+ rec=new MediaRecorder(s); chunks=[]; rec.ondataavailable=e=>chunks.push(e.data);
+ rec.onstop=()=>{const blob=new Blob(chunks,{type:'audio/webm'}); const r=new FileReader(); r.onload=()=>{db.ref('radio/'+sala+'/notas').push({from:nombre,audio:r.result,ts:Date.now()}); log(`<b>Tú 🎤:</b><br><audio controls src="${r.result}"></audio>`,true);}; r.readAsDataURL(blob); document.getElementById('btnNota').innerText='🎙️ Nota de voz';};
+ rec.start(); document.getElementById('btnNota').innerText='⏹️ Enviar nota'; setTimeout(()=>{if(rec.state==='recording')rec.stop();},10000);
 };
-document.getElementById('btnSilenciar').onclick=()=>{muted=!muted; document.querySelectorAll('audio').forEach(a=>a.muted=muted); document.getElementById('btnSilenciar').innerText=muted?'🔊 Sonido':'🔇 Silenciar';};
-</script></body></html>
+document.getElementById('btnMute').onclick=()=>{muted=!muted; document.querySelectorAll('audio').forEach(a=>a.muted=muted); document.getElementById('btnMute').innerText=muted?'🔇 Silenciado':'🔊 Sonido';};
+</script>
+</body>
+</html>
